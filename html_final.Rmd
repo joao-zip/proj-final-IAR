@@ -1,0 +1,252 @@
+---
+title: "Projeto Final - Inferência e Análise de Regressão"
+author: "João Pedro Martins Oliveira"
+date: "2023-12-01"
+output:
+    html_document:
+        theme: flatly
+        highlight: tango
+        code_download: true
+        toc: yes
+        toc_float:
+            collapsed: yes
+            smooth_scroll: no
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(dev = "svg")
+```
+
+# _"Você consegue predizer a eficiência de combustível de um carro?"_
+
+```{r, echo=FALSE}
+knitr::include_graphics("Auto MPG/tim-mossholder-680992-unsplash.jpg")
+```
+
+# Motivação do trabalho
+
+O presente trabalho tenta responder à pergunta _"Você consegue predizer a eficiência de combustível de um carro?"_, e para isso utiliza da base de dados [AutoMPG](https://code.datasciencedojo.com/datasciencedojo/datasets/tree/master/Auto%20MPG), disponibilizado pelo centro de estudos em aprendizado de máquina da [UC Irvine](https://archive.ics.uci.edu/dataset/9/auto+mpg). O site informa que esta base de dados é uma versão modificada da base de dados original disponibilizada pela [StatLib](http://lib.stat.cmu.edu/datasets/).
+
+# Análise Exploratória dos dados
+
+Primeiro, precisamos importar as bibliotecas necessárias:
+
+```{r, message=FALSE}
+
+library(knitr)
+library(rmarkdown)
+library(htmltools)
+
+library(MASS)
+library(tidyverse)
+library(GGally)
+library(stargazer)
+library(car)
+
+theme_set(theme_classic()) # importante para termos o mesmo layout para os gráficos
+```
+
+Vamos importar a base de dados e observar a organização tabular dos mesmos:
+
+``` {r}
+car_data <- read.table("./Auto MPG/auto-mpg.data", header=FALSE)
+
+# Vamos adicionar os nomes às variáveis
+names(car_data) <- c("mpg", "cylinders", "displacement", "horsepower", 
+                     "weight", "acceleration", "model_year", "origin", 
+                     "car_name")
+
+glimpse(car_data)
+
+paged_table(car_data)
+```
+
+Aqui podemos observar alguns pontos, como:
+
+- O dataset possui `r nrow(car_data)` linhas e `r ncol(car_data)` colunas;
+- A variável _horsepower_ está representada como caractere
+- As variável _car_name_ à primeira vista não parece ser útil para a análise, já que o nome do carro não interfere no gasto de combustível
+
+Agora também é possível observar que desejamos predizer o valor da variável dependente _mpg(miles per galon)_ atraveś de uma regressão linear múltipla, utilizando como variáveis independentes as demais variáveis do dataset.
+
+Na _chunk_ abaixo nós realizamos a transformação de algumas variáveis e retiramos possíveis NA's que apareceram no nosso dataset.
+
+```{r}
+car_data <- car_data %>% 
+                filter(car_data$horsepower != "?" ) %>% 
+                select(c(-car_name))
+
+car_data$horsepower <- as.numeric(car_data$horsepower)
+car_data$origin <- as.factor(car_data$origin)
+car_data$cylinders <- as.factor(car_data$cylinders)
+```
+
+Agora vamos verificar a correlação entre as variáveis duas a duas, com um gráfico pairplot:
+
+```{r, fig.width=10, fig.height=10, message=FALSE}
+ggpairs(car_data, 
+            title = "Análise dois a dois", 
+            mapping = aes(color = cylinders),
+            legend = 1
+        )
+```
+
+Observando a tabela acima, podemos notar que, aparentemente, carros com 4 cilindros tem uma eficiência melhor que carros com mais cilindros, e que as variáveis _'weight'_ e _'horsepower'_ parecem ser positivamente correlacionadas. Entretanto, a variável _'horsepower'_ aparenta estar negativamente correlacionada com a variável _'acceleration'_. Vale observar que a variável _'mpg'_ não parece ter correlação linear com nenhuma das variáveis independentes do dataset.
+
+# Ajustando o modelo de regressão
+
+## Primeiro Modelo
+
+Para a confecção do primeiro modelo, vamos ajustar uma reta com todas as variáveis do nosso dataset:
+
+```{r}
+model <- lm(mpg ~ .,
+            data = car_data)
+stargazer::stargazer(model, type = "text")
+anova(model)
+```
+
+Aqui podemos perceber algumas informações interessantes, como o R² de aproximadamente 0.84. Porém, ao observar o teste anova, observamos que a variável "acceleration" não é significativa, e podemos retirar do modelo.
+
+## Segundo Modelo
+
+Sendo assim, criamos um segundo modelo retirando a variável não significativa:
+
+```{r}
+model_2 <- lm(mpg ~ displacement + horsepower + weight + cylinders + origin + model_year,
+              data = car_data)
+stargazer::stargazer(model_2, type = "text")
+anova(model_2)
+shapiro.test(model_2$residuals)
+```
+
+Agora observamos um R² de 0.84, o que é bom, e a análise anova nos mostra que exitem apenas variáveis significativas no modelo. Utilizaremos a função [stepAIC](https://ashutoshtr.medium.com/what-is-stepaic-in-r-a65b71c9eeba), muito comum para a realização do processo de _'feature selection'_, e averiguar a possibilidade de realizar alguma alteração no modelo.
+
+```{r}
+backward <- stepAIC(model_2, direcion="backward", trace=FALSE)
+anova(backward)
+```
+
+Agora utilizamos a função VIF(Variance Inflaction Factor), que é um preditor que nos auxilia a verificar a multicolinearidade no modelo([saiba mais](https://www.investopedia.com/terms/v/variance-inflation-factor.asp)). De forma geral, podemos afirmar que um VIF maior que 5 ou 10 é ruim, e o modelo apresenta problemas ao estimar os valores desejados.
+
+```{r}
+vif(backward)
+```
+
+Observe que as variáveis _'displacement'_ e _'cilynders'_ tem valores bem acima de 10, então começaremos retirando a variável _'displacement'_.
+
+## Terceiro Modelo
+
+```{r}
+model_3 <- lm(mpg ~ horsepower + weight + cylinders + origin + model_year,
+              data = car_data)
+anova(model_3)
+vif(model_3)
+```
+
+Ainda encontramos um vif alto para a variávell _'cylinders'_, então também iremos retirá-la:
+
+```{r}
+model_4 <- lm(mpg ~ horsepower + weight + origin + model_year,
+              data = car_data)
+anova(model_4)
+vif(model_4)
+```
+
+Agora encontramos valores abaixo de 5 em todas as variáveis independentes, indicando que chegamos possivelmente a um modelo eficiente.
+
+# Avaliação dos pressupostos da regressão
+
+```{r, echo=FALSE, message=FALSE}
+# Teste de linearidade
+
+ggplot(car_data, aes(fitted(model_4), residuals(model_4))) +
+    geom_point() +
+    geom_hline(yintercept = 0, color = "red") +
+    geom_smooth() +
+    ggtitle("Teste de Linearidade do modelo 4")
+```
+
+Observe que podemos tentar linearizar mais a reta, ou seja, eliminar a não linearidade entre as variáveis; para isso, utilizaremos a transformação de BoxCox:
+
+```{r, message=FALSE}
+library(fpp)
+lambda <- BoxCox.lambda(car_data$mpg, method=c("loglik"), lower=-3, upper= 3)
+data_t <- BoxCox(car_data$mpg, lambda)
+
+model_5 <- lm(data_t ~ horsepower + weight + origin + model_year,
+              data = car_data)
+
+stargazer::stargazer(model_5, type = "text")
+anova(model_5)
+vif(model_5)
+```
+
+E iremos avaliar novamente as pressuposições da nossa regressão:
+
+## Linearidade
+
+```{r, echo=FALSE, message=FALSE}
+ggplot(car_data, aes(fitted(model_5), residuals(model_5))) +
+    geom_point() +
+    geom_hline(yintercept = 0, color = "red") +
+    geom_smooth() +
+    ggtitle("Teste de Linearidade do modelo após a transf. BoxCox")
+```
+
+Observamos que apesar de não ser o ideal, a curva se tornou mais suave nas pontas, possivelmente melhorando o teste da normalidade dos resíduos.
+
+## Normalidade dos Resíduos
+
+```{r}
+shapiro.test(model_5$residuals)
+
+ggplot() +
+    ggtitle("Gráfico QQPlot") +
+    geom_qq(aes(sample = rstandard(model_5))) +
+    geom_abline(color = "red") +
+    coord_fixed()
+```
+
+Observe que obtivemos um p-valor < 0.5, indicando que há evidências estatísticas suficientes para rejeitar a hipótese nula de que os resíduos da regressão seguem uma distribuição normal. Em outras palavras, o p-valor é menor que um nível de significância comum (0.05, por exemplo), o que sugere que a distribuição dos resíduos não é normal.
+
+## Homocedasticidade
+
+```{r}
+# Teste de Breusch-Pagan
+bptest(model_5)
+
+res_sqrt <- sqrt(abs(rstandard(model_5)))
+
+ggplot(car_data, aes(fitted(model_5), res_sqrt)) +
+    ggtitle("Verificando a Homocedasticidade") +
+    geom_point() +
+    geom_smooth()
+```
+
+## Multicolinearidade
+
+```{r, message=FALSE}
+vif(model_5)
+```
+
+# Conclusão
+
+```{r}
+stargazer::stargazer(model_5, type = "text")
+```
+
+Ao final do ajuste do modelo, foi possível observar um valor R2 de 0.87, indicando que o modelo tem uma boa capacidade explicativa. As verificações das hipóteses também foram melhores após a realização da transformação de BoxCox, apesar de não serem suficientes(Não passou nos testes de normalidade e homocedasticidade). 
+
+Uma das possíveis alternativas seriam a criação de modelos não-lineares, como modelos logísticos, já que o modelo linear não foi suficiente para explicar de forma desejável o problema proposto.
+
+Assim, o modelo final apresenta o seguinte formato:
+
+```{=latex}
+\begin{equation}
+Y = \beta_0 + \beta_1 horsepower + \beta_2 weight + \beta_3 origin + \beta_4 modelyear + \varepsilon
+\end{equation}
+```
+
+Onde 'origin' é uma variável dummy.
