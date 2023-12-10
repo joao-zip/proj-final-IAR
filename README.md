@@ -4,4 +4,4 @@ This is the repository where you will find the fit of a multiple linear regressi
 
 The problem starts with the following question: _Can you predict the fuel-efficieny of a car?_
 
-To find out the answer, click on the link [HERE](google.com). Hope you enjoy!! 😄
+To find out the answer, click on the link [HERE](https://joao-zip.github.io/proj-final-IAR/). Hope you enjoy!! 😄
